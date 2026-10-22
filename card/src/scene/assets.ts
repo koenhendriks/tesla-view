@@ -36,14 +36,22 @@ const objLoader = new OBJLoader();
 export const loadGltf = (rel: string, base: string = ASSETS_ROOT) => new Promise<GLTF>((res, rej) => gltfLoader.load(assetUrl(rel, base), res, undefined, rej));
 export const loadObj = (rel: string, base: string = ASSETS_ROOT) => new Promise<THREE.Group>((res, rej) => objLoader.load(assetUrl(rel, base), res, undefined, rej));
 
+/** Godot SpatialMaterial uv1_scale / uv1_offset: UV = UV * scale + offset (same as three.js repeat/offset). */
+export interface UvTransform { scale?: number[] | null; offset?: number[] | null }
+const uvKey = (uv?: UvTransform) => uv ? `${uv.scale?.slice(0, 2) ?? ''}/${uv.offset?.slice(0, 2) ?? ''}` : '';
+function applyUv(t: THREE.Texture, uv?: UvTransform) {
+  if (uv?.scale) t.repeat.set(uv.scale[0], uv.scale[1]);
+  if (uv?.offset) t.offset.set(uv.offset[0], uv.offset[1]);
+}
+
 /** Texture cache shared by all materials of a card. `gamma` = GLES2 look: no sRGB decode on colour textures. */
 export class TextureCache {
   private loader = new THREE.TextureLoader();
   private cache = new Map<string, THREE.Texture>();
   constructor(private gamma: boolean, readonly base: string = ASSETS_ROOT) {}
 
-  texture(rel: string, { color = false, channel = 0 } = {}): THREE.Texture {
-    const k = `${rel}|${color}|${channel}`;
+  texture(rel: string, { color = false, channel = 0, uv }: { color?: boolean; channel?: number; uv?: UvTransform } = {}): THREE.Texture {
+    const k = `${rel}|${color}|${channel}|${uvKey(uv)}`;
     let t = this.cache.get(k);
     if (t) return t;
     t = this.loader.load(assetUrl(rel, this.base));
@@ -51,20 +59,22 @@ export class TextureCache {
     t.colorSpace = color && !this.gamma ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.channel = channel;                              // 0 = TEXCOORD_0, 1 = TEXCOORD_1 (Godot "on_uv2")
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    applyUv(t, uv);
     this.cache.set(k, t);
     return t;
   }
 
   /** Godot packs metal/rough/AO in arbitrary channels (0=R 1=G 2=B 3=A 4=gray); three.js reads AO from R,
    *  roughness from G, metalness from B. Re-pack the requested source channel into the channel three.js expects. */
-  packed(rel: string, srcChannel: number, dstChannel: number, uvChannel = 0): THREE.Texture {
-    const k = `pack|${rel}|${srcChannel}|${dstChannel}|${uvChannel}`;
+  packed(rel: string, srcChannel: number, dstChannel: number, uvChannel = 0, uv?: UvTransform): THREE.Texture {
+    const k = `pack|${rel}|${srcChannel}|${dstChannel}|${uvChannel}|${uvKey(uv)}`;
     let t = this.cache.get(k);
     if (t) return t;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 4;
     const tex = new THREE.CanvasTexture(canvas);
     tex.flipY = false; tex.colorSpace = THREE.NoColorSpace; tex.channel = uvChannel;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;     // body UVs sit outside 0..1 and rely on repeat
+    applyUv(tex, uv);
     const img = new Image(); img.crossOrigin = 'anonymous'; img.src = assetUrl(rel, this.base);
     img.onload = () => {
       canvas.width = img.width; canvas.height = img.height;

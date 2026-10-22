@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TextureCache } from './assets';
+import { TextureCache, type UvTransform } from './assets';
 
 /** Paint definition from paint-colors.json (what the Tesla app feeds its paint shader). */
 export interface Paint { albedo: string; metallic: number; roughness: number }
@@ -11,6 +11,7 @@ export interface MaterialDesc {
   metallic?: number; metallic_texture?: string | null; metallic_channel?: number; specular?: number;
   roughness?: number; roughness_texture?: string | null; roughness_channel?: number;
   ao_texture?: string | null; ao_channel?: number; ao_on_uv2?: boolean;
+  uv1_scale?: number[] | null; uv1_offset?: number[] | null;
   normal_texture?: string | null; normal_scale?: number;
   emission?: number[]; emission_energy?: number; emission_texture?: string | null; emission_on_uv2?: boolean;
   transparent?: boolean; unshaded?: boolean; cull_mode?: number; blend_mode?: number; depth_draw_mode?: number;
@@ -72,6 +73,10 @@ export class MaterialFactory {
       });
     } else if (desc.kind === 'pbr') {
       const P = desc;
+      // uv1_scale/uv1_offset apply to every texture sampled on UV1 (three.js channel 0), not to the *_on_uv2 ones
+      const sc = P.uv1_scale, of = P.uv1_offset;
+      const uv: UvTransform | undefined = (sc && (sc[0] !== 1 || sc[1] !== 1)) || (of && (of[0] || of[1])) ? { scale: sc, offset: of } : undefined;
+      const uvOf = (onUv2?: boolean) => onUv2 ? undefined : uv;
       if (P.unshaded) {
         m = new THREE.MeshBasicMaterial({ color: this.color(P.albedo!), side });
       } else {
@@ -79,19 +84,19 @@ export class MaterialFactory {
           color: this.color(P.albedo!), metalness: P.metallic ?? 0, roughness: P.roughness ?? 1, side,
           specularIntensity: (P.specular ?? 0.5) / 0.5,
         });
-        if (P.metallic_texture) pm.metalnessMap = T.packed(P.metallic_texture, P.metallic_channel ?? 0, 2);
-        if (P.roughness_texture) pm.roughnessMap = T.packed(P.roughness_texture, P.roughness_channel ?? 0, 1);
-        if (P.ao_texture) { pm.aoMap = T.packed(P.ao_texture, P.ao_channel ?? 0, 0, P.ao_on_uv2 ? 1 : 0); pm.aoMapIntensity = 1.0; }
-        if (P.normal_texture) { pm.normalMap = T.texture(P.normal_texture); pm.normalScale.setScalar(P.normal_scale ?? 1); }
+        if (P.metallic_texture) pm.metalnessMap = T.packed(P.metallic_texture, P.metallic_channel ?? 0, 2, 0, uv);
+        if (P.roughness_texture) pm.roughnessMap = T.packed(P.roughness_texture, P.roughness_channel ?? 0, 1, 0, uv);
+        if (P.ao_texture) { pm.aoMap = T.packed(P.ao_texture, P.ao_channel ?? 0, 0, P.ao_on_uv2 ? 1 : 0, uvOf(P.ao_on_uv2)); pm.aoMapIntensity = 1.0; }
+        if (P.normal_texture) { pm.normalMap = T.texture(P.normal_texture, { uv }); pm.normalScale.setScalar(P.normal_scale ?? 1); }
         if (P.emission) {
           pm.emissive = P.emission_texture ? new THREE.Color(1, 1, 1) : this.color(P.emission);
           pm.emissiveIntensity = P.emission_energy ?? 1;
-          if (P.emission_texture) pm.emissiveMap = T.texture(P.emission_texture, { color: true, channel: P.emission_on_uv2 ? 1 : 0 });
+          if (P.emission_texture) pm.emissiveMap = T.texture(P.emission_texture, { color: true, channel: P.emission_on_uv2 ? 1 : 0, uv: uvOf(P.emission_on_uv2) });
         }
         m = pm;
       }
       const mm = m as THREE.MeshBasicMaterial | THREE.MeshPhysicalMaterial;
-      if (P.albedo_texture) mm.map = T.texture(P.albedo_texture, { color: true });
+      if (P.albedo_texture) mm.map = T.texture(P.albedo_texture, { color: true, uv });
       // Godot's flags_transparent with alpha 1 and no texture is only there so the app can fade the part: keep it opaque.
       if ((P.alpha ?? 1) < 1 || (P.transparent && P.albedo_texture)) {
         mm.transparent = true; mm.opacity = P.alpha ?? 1; mm.depthWrite = P.depth_draw_mode === 3 || P.depth_draw_mode === 1;
