@@ -65,8 +65,12 @@ async function loadObjScene(ov: SceneOverrides, factory: MaterialFactory, base: 
       o = await loadObj(v.mesh, base); o.name = name;
       const meshes: THREE.Mesh[] = []; o.traverse(c => { if ((c as THREE.Mesh).isMesh) meshes.push(c as THREE.Mesh); });
       for (const [slot, key] of Object.entries(v.materials || {})) {
-        const desc = ov.materials[key]; const mesh = meshes[+slot] || meshes[0]; if (!mesh) continue;
-        mesh.material = materialFor?.(name, key, desc) || factory.build(desc, key);
+        const desc = ov.materials[key]; const mat = materialFor?.(name, key, desc) || factory.build(desc, key);
+        // several usemtl blocks → OBJLoader returns one mesh with a material array (one entry per surface)
+        const multi = meshes.length === 1 && Array.isArray(meshes[0].material) ? meshes[0].material as THREE.Material[] : null;
+        if (multi) { if (+slot < multi.length) multi[+slot] = mat; continue; }
+        const mesh = meshes[+slot] || meshes[0]; if (!mesh) continue;
+        mesh.material = mat;
       }
     } else { o = new THREE.Object3D(); o.name = name; }
     if (v.matrix) new THREE.Matrix4().fromArray(v.matrix).decompose(o.position, o.quaternion, o.scale);
