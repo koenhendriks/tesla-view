@@ -84,7 +84,7 @@ seats: 5               # 5 | 7 (when the model has a 7-seat variant)
 cable: auto            # auto | CCS | EU | US … (charge cable model)
 rhd: false             # right-hand drive interior
 theme: auto            # auto (follows HA dark mode) | dark | light
-camera: parked         # parked | top_down | charging | drive | climate (presets from the pack) | free
+camera: parked         # parked | top_down | charging | drive | climate (presets from the pack) | front_right | free
 aspect_ratio: "16:9"   # or height: 360
 hotspots: true
 ```
@@ -152,3 +152,55 @@ Releases are tag-driven: bump the version in `custom_components/tesla_view/const
 
 Code: [MIT](LICENSE). This repository contains no Tesla material; see [NOTICE](NOTICE). Tesla, Model 3, Model S,
 Model X, Model Y and Cybertruck are trademarks of Tesla, Inc. This project is not affiliated with or endorsed by Tesla.
+
+### Custom PNG wraps
+
+In the card's visual editor, **Custom PNG wrap → Upload PNG** selects an image from your computer.
+The editor shows a texture preview and filename; click **Save** to apply it. **Use standard paint** removes
+the wrap from the card. Uploaded images remain in Home Assistant's image storage when a wrap is removed or
+the editor is cancelled. Upload requires Home Assistant's image upload integration.
+
+Use a square PNG matching your vehicle's wrap template (up to 4096 × 4096 and 9 MB). The asset pack must
+include matching second-channel UV coordinates (TEXCOORD_1). Only car-paint materials receive the wrap;
+glass, lights, wheels and trim retain their materials. Transparent pixels reveal the selected paint.
+No wrap images or vehicle assets are bundled with the card.
+
+For an existing image, configure a same-origin image URL directly:
+
+```yaml
+type: custom:tesla-view-card
+wrap_url: /local/my-wrap.png
+wrap_name: My custom wrap   # optional display name
+```
+
+External URLs require CORS support. Remove `wrap_url` and `wrap_name` to return to standard paint.
+
+### Optional Studio scene
+
+Turn on **Enable Studio light environment** in the visual editor for a procedural floor, a live vehicle reflection,
+a soft grounding shadow and directional studio lighting. **Classic** remains the default and uses
+the original pack presentation. This is an optional interpretation of a studio environment, not an
+import of Tesla's in-car renderer. It works with preset paint and custom PNG wraps.
+
+```yaml
+scene: studio
+studio_reflection: 0.25  # 0–1; 0 hides the reflection
+studio_light: 1          # 0–3; strength of added lights and the floor light pool
+```
+
+Both settings are sliders in the visual editor. The floor follows the card's light/dark theme,
+and orbit controls prevent viewing below it. Its soft shadow is an approximate static footprint;
+the reflected car follows doors and other animations. The 768-pixel reflection adds one scene render
+per active frame; rendering still pauses when the card is idle or offscreen. Use Classic on devices
+where the reflection costs too much performance. Studio resources are disposed when disabled, when
+replacing the vehicle, and when the card disconnects.
+
+Choose **Camera → Front right (three-quarter)** for an elevated front view. It works with both Classic and Studio scenes and custom wraps. YAML: `camera: front_right`.
+
+The Studio toggle switches back to Classic when disabled, preserving reflection and lighting settings. Studio includes a front spotlight and soft floor light beams; these presentation effects do not send headlight commands to the vehicle.
+
+### Mirror folding
+
+`fold_mirrors_on_lock` (default `true`) folds the 3D mirrors when the lock entity is locked and extends them when unlocked. This is a visual inference, not mirror telemetry or a separate vehicle command. Turn it off in the visual editor or YAML if Auto Fold is disabled in your car. Unknown lock state does not change mirror position.
+
+Supported packs map their mirror animations into the existing `closures.mirrors_fold` channel, with time zero extended and the animation endpoint folded. Packs without this mapping keep their original mirrors; there are no model-specific animation names in the card.

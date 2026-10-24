@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { ASSETS_ROOT, INDEX_REV, assetUrl, TextureCache } from './scene/assets';
 import { MaterialFactory } from './scene/materials';
+import { StudioScene } from './scene/studio';
 import { Vehicle } from './scene/vehicle';
 import { PackLoader, resolvePaint, type EnvPreset, type PackEnvironment, type PackIndex, type PackManifest } from './pack';
 import { createHotspots } from './hotspots';
@@ -22,7 +23,7 @@ const DOCS_PACK_URL = DOCS_URL + '#asset-pack';
 const CAMERA_FIT = 0.84;
 
 const DEFAULTS: Partial<CardConfig> = { trim: 'premium', plate: 'eu', seats: 5, cable: 'auto', theme: 'auto', camera: 'parked', aspect_ratio: '16:9', hotspots: true };
-const LOAD_KEYS: (keyof CardConfig)[] = ['model', 'trim', 'paint', 'wheels', 'plate', 'seats', 'cable', 'rhd', 'hotspots'];
+const LOAD_KEYS: (keyof CardConfig)[] = ['wrap_url', 'model', 'trim', 'paint', 'wheels', 'plate', 'seats', 'cable', 'rhd', 'hotspots'];
 
 interface Pending { value: any; since: string | undefined; until: number }
 
@@ -68,6 +69,7 @@ export class TeslaViewCard extends LitElement {
   private probe?: THREE.LightProbe;
   private vehicle?: Vehicle;
   private factory?: MaterialFactory;
+  private studio?: StudioScene;
   private hotspots?: ReturnType<typeof createHotspots>;
   private clock = new THREE.Clock();
   private wakeUntil = 0; private looping = false; private visible = true; private interacting = false;
@@ -81,6 +83,8 @@ export class TeslaViewCard extends LitElement {
     this.config = { ...DEFAULTS, ...config } as CardConfig;
     if (!prev || LOAD_KEYS.some(k => (prev as any)[k] !== (this.config as any)[k])) this.loadVehicle();
     else if (prev.camera !== this.config.camera) { this.firstSync = true; this.applyPreset(); }
+    this.updateStudio();
+    this.applyTheme();
     if (this._hass) this.resolve();
     this.requestUpdate();
   }
@@ -122,8 +126,8 @@ export class TeslaViewCard extends LitElement {
     this.applyTheme(); this.resize();
     if (this.config && !this.vehicle) this.loadVehicle();
   }
-  disconnectedCallback() { super.disconnectedCallback(); this.ro?.disconnect(); this.io?.disconnect(); }
-  connectedCallback() { super.connectedCallback(); if (this.renderer) { this.ro?.observe(this.renderRoot.querySelector('.wrap')!); this.io?.observe(this); this.wake(200); } }
+  disconnectedCallback() { super.disconnectedCallback(); this.ro?.disconnect(); this.io?.disconnect(); this.studio?.dispose(); this.studio = undefined; }
+  connectedCallback() { super.connectedCallback(); this.updateStudio(); if (this.renderer) { this.ro?.observe(this.renderRoot.querySelector('.wrap')!); this.io?.observe(this); this.wake(200); } }
   protected updated(_: PropertyValues) { this.resize(); }
 
   private resize() {
@@ -142,7 +146,9 @@ export class TeslaViewCard extends LitElement {
   private placeCamera() {
     if (this.config?.camera === 'free' && this.controls && this.camera.position.lengthSq() > 0.01 && !this.firstSync) return;
     const p = this.preset(); if (!p) return;
-    const e = new THREE.Euler(...(p.camera.pivot_deg.map(THREE.MathUtils.degToRad) as [number, number, number]), 'YXZ');
+    // User-facing three-quarter view; retain the pack's framing and lighting.
+    const pivot = this.config?.camera === 'front_right' ? [70, 142, 0] : p.camera.pivot_deg;
+    const e = new THREE.Euler(...(pivot.map(THREE.MathUtils.degToRad) as [number, number, number]), 'YXZ');
     const target = new THREE.Vector3().fromArray(p.camera.target || [0, 0.6, 0]);
     const offset = new THREE.Vector3().fromArray(p.camera.offset).multiplyScalar(CAMERA_FIT * Math.max(1, 1.5 / this.camera.aspect));   // narrow cards: back off so the car fits
     this.camera.position.copy(offset).applyEuler(e).add(target);
@@ -160,7 +166,17 @@ export class TeslaViewCard extends LitElement {
     const t = this.config?.theme || 'auto';
     const dark = t === 'dark' ? true : t === 'light' ? false : (this._hass?.themes?.darkMode ?? true);
     const bg = this.manifest?.environment?.bg || { dark: '#161718', light: '#F7F7F7' };
-    this.scene.background = new THREE.Color(dark ? bg.dark : bg.light); this.wake(50);
+    this.scene.background = new THREE.Color(dark ? bg.dark : bg.light);
+    const clamp = (value: number | undefined, fallback: number, max: number) => Number.isFinite(value) ? THREE.MathUtils.clamp(value!, 0, max) : fallback;
+    this.studio?.update(this.scene.background, dark, clamp(this.config?.studio_reflection, 0.25, 1), clamp(this.config?.studio_light, 1, 3));
+    this.wake(50);
+  }
+  private updateStudio() {
+    if (this.config?.scene === 'studio' && this.vehicle && this.isConnected) {
+      if (!this.studio) { this.studio = new StudioScene(this.vehicle.root, this.vehicle.markers.frunk || this.vehicle.markers.lights); this.scene.add(this.studio.root); }
+    } else { this.studio?.dispose(); this.studio = undefined; }
+    if (this.controls) this.controls.maxPolarAngle = this.studio ? Math.PI / 2 - 0.02 : Math.PI / 2 + 0.05;
+    this.applyTheme();
   }
   private async setupEnvironment(env: PackEnvironment, base: string) {
     if (!this.renderer || !env.panorama || this.envBase === base) return;
@@ -192,16 +208,18 @@ export class TeslaViewCard extends LitElement {
       const gamma = (manifest.environment?.renderer || 'gles2_gamma') === 'gles2_gamma';
       const { paint } = resolvePaint(manifest, this.config.paint);
       const textures = new TextureCache(gamma, base);
-      const factory = new MaterialFactory(textures, paint, gamma, 1.0);
+      const factory = new MaterialFactory(textures, paint, gamma, 1.0, this.config.wrap_url);
       const v = await Vehicle.load({
         manifest, modelId: pick.id, base, factory, performance: this.config.trim === 'performance', rhd: !!this.config.rhd,
         plate: this.config.plate, seats7: this.config.seats === 7, wheels: this.config.wheels, cable: this.config.cable,
       });
       if (token !== this.loadToken) return;                        // superseded by a newer config
+      this.studio?.dispose(); this.studio = undefined;
       if (this.vehicle) { this.scene.remove(this.vehicle.root); this.vehicle.dispose(); this.factory?.dispose(); }
       this.hotspots?.dispose();
       this.manifest = manifest; this.base = base;
       this.vehicle = v; this.factory = factory; this.scene.add(v.root);
+      this.updateStudio();
       this.firstSync = true; this.applyTheme(); this.applyPreset();
       if (this.config.hotspots !== false) this.buildHotspots();
       this.message = '';
@@ -265,6 +283,8 @@ export class TeslaViewCard extends LitElement {
     const v = this.vehicle; if (!v) return;
     for (const ch of ['frunk', 'trunk', 'charge_port', 'door_fl', 'door_fr', 'door_rl', 'door_rr', 'window_fl', 'window_fr', 'window_rl', 'window_rr'] as const)
       if (s[ch] !== undefined) v.setClosure(ch, !!s[ch], animate);
+    // Pack animation time 0 is extended; the endpoint is folded. Unknown lock state is left alone.
+    if (s.lock !== undefined) v.setClosure('mirrors_fold', this.config.fold_mirrors_on_lock !== false && s.lock, animate);
     v.setLights({ drl: !!s.drl, headlights: !!s.headlights });
     if (s.charge_cable !== undefined) { v.setCable(!!s.charge_cable, s.charging || 'unknown'); if (s.charge_cable) v.setClosure('charge_port', true, animate); }   // a plugged cable implies an open port
     this.wake(1500);
@@ -296,6 +316,7 @@ export class TeslaViewCard extends LitElement {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const busy = this.vehicle?.update(dt) || false;
     this.controls?.update();
+    this.studio?.followCamera(this.camera);
     this.renderer.render(this.scene, this.camera);
     this.hotspots?.update();
     if (busy || this.interacting || this.hotspots?.anyHovered() || performance.now() < this.wakeUntil) requestAnimationFrame(this.frame);

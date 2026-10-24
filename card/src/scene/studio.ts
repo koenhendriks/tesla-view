@@ -1,0 +1,189 @@
+import * as THREE from 'three';
+import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
+
+/** Optional, procedural presentation scene. No vehicle-specific assets or node names. */
+export class StudioScene {
+  readonly root = new THREE.Group();
+  private floor: Reflector;
+  private key = new THREE.DirectionalLight(0xffeedb, 2);
+  private fill = new THREE.DirectionalLight(0xdceaff, 0.8);
+  private front = new THREE.SpotLight(0xfff3e1, 30, 30, Math.PI / 5, 0.8, 2);
+  private shaft: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private ambient = new THREE.HemisphereLight(0xffffff, 0x9ca7b5, 0.6);
+  private surround = Array.from({ length: 4 }, () => new THREE.DirectionalLight(0xf1f5ff, 1.2));
+  private cameraFill = new THREE.DirectionalLight(0xffffff, 3);
+  private vehicleCenter = new THREE.Vector3();
+  private cameraDirection = new THREE.Vector3();
+  private bounds = new THREE.Box3();
+
+  constructor(vehicle: THREE.Object3D, frontAnchor?: THREE.Object3D) {
+    vehicle.updateWorldMatrix(true, true);
+    vehicle.traverseVisible(object => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.geometry.computeBoundingBox();
+      const box = mesh.geometry.boundingBox;
+      if (!box) return;
+      const size = box.getSize(new THREE.Vector3());
+      // Ignore flat ground decals and projected lights when finding the tyre plane.
+      if (Math.min(size.x, size.y, size.z) < 0.015) return;
+      this.bounds.union(box.clone().applyMatrix4(mesh.matrixWorld));
+    });
+    if (this.bounds.isEmpty()) this.bounds.set(new THREE.Vector3(-1, 0, -2), new THREE.Vector3(1, 2, 2));
+    const center = this.bounds.getCenter(this.vehicleCenter);
+    this.cameraFill.target.position.copy(center);
+    this.root.add(this.cameraFill, this.cameraFill.target);
+    const size = this.bounds.getSize(new THREE.Vector3());
+    const forward = frontAnchor ? frontAnchor.getWorldPosition(new THREE.Vector3()).sub(center) : new THREE.Vector3(0, 0, -1);
+    forward.y = 0; forward.normalize();
+    if (forward.lengthSq() < 0.01) forward.set(0, 0, -1);
+    // Vehicle-left, derived from the forward marker rather than model-specific axes.
+    const left = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+    const lightOffset = forward.clone().multiplyScalar(3.5).addScaledVector(left, 4);
+    const shader = {
+      uniforms: {
+        color: { value: new THREE.Color() }, tDiffuse: { value: null }, textureMatrix: { value: new THREE.Matrix4() },
+        textureStrength: { value: 1 }, floorColor: { value: new THREE.Color() }, reflection: { value: 0.25 },
+        lightOrigin: { value: new THREE.Vector2(lightOffset.x, -lightOffset.z) },
+        pool: { value: 0.035 }, footprint: { value: new THREE.Vector2(size.x * 0.52, size.z * 0.52) },
+      },
+      vertexShader: `
+        uniform mat4 textureMatrix;
+        varying vec4 reflectedUv;
+        varying vec2 floorPosition;
+        void main() {
+          floorPosition = position.xy;
+          reflectedUv = textureMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform vec3 floorColor;
+        uniform float reflection;
+        uniform float pool;
+        uniform float textureStrength;
+        uniform vec2 footprint;
+        uniform vec2 lightOrigin;
+        varying vec4 reflectedUv;
+        varying vec2 floorPosition;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p) {
+          vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1., 0.)), f.x), mix(hash(i + vec2(0., 1.)), hash(i + vec2(1., 1.)), f.x), f.y);
+        }
+        void main() {
+          vec2 p = floorPosition;
+          vec2 poolUv = (p - lightOrigin * 0.35) / vec2(5.5, 5.5);
+          float lightPool = exp(-dot(poolUv, poolUv));
+          vec2 contactUv = p / footprint;
+          float contact = 0.72 * exp(-2.0 * dot(contactUv, contactUv));
+          // World-space mottling and filtered fine grain: stable when orbiting/zooming.
+          float mottling = noise(p * 3.0) - 0.5;
+          float grain = (noise(p * 95.0) - 0.5) / (1.0 + length(fwidth(p * 95.0)));
+          float surface = 1.0 + (mottling * 0.18 + grain * 0.24) * textureStrength * lightPool;
+          vec3 ground = (floorColor + vec3(pool * lightPool)) * surface * (1.0 - contact);
+          vec2 uv = reflectedUv.xy / reflectedUv.w;
+          vec2 blur = vec2(0.0018 + 0.0006 * noise(p * 8.0));
+          vec3 reflected = texture2D(tDiffuse, uv).rgb * 0.4;
+          reflected += texture2D(tDiffuse, uv + vec2(blur.x, 0.)).rgb * 0.15;
+          reflected += texture2D(tDiffuse, uv - vec2(blur.x, 0.)).rgb * 0.15;
+          reflected += texture2D(tDiffuse, uv + vec2(0., blur.y)).rgb * 0.15;
+          reflected += texture2D(tDiffuse, uv - vec2(0., blur.y)).rgb * 0.15;
+          float fade = exp(-dot(p / vec2(6.0, 7.0), p / vec2(6.0, 7.0)));
+          gl_FragColor = vec4(mix(ground, reflected, reflection * fade * (1.0 - contact) * (0.92 + 0.08 * surface)), 1.0);
+        }`,
+    };
+    this.floor = new Reflector(new THREE.PlaneGeometry(200, 200), {
+      textureWidth: 768, textureHeight: 768, multisample: 0, clipBias: 0.003, shader,
+    });
+    this.floor.rotation.x = -Math.PI / 2;
+    this.floor.position.set(center.x, this.bounds.min.y - 0.015, center.z);
+    this.key.position.copy(center).add(lightOffset); this.key.position.y += 6;
+    this.fill.position.set(center.x + 4, center.y + 3, center.z - 3);
+    this.key.target.position.copy(center); this.fill.target.position.copy(center);
+    this.front.position.copy(this.key.position);
+    this.front.target.position.copy(center);
+    // Four broad fills keep every side readable while the key retains directional contrast.
+    for (const [i, lamp] of this.surround.entries()) {
+      const angle = i * Math.PI / 2;
+      lamp.position.copy(center).addScaledVector(forward, Math.cos(angle) * 5).addScaledVector(left, Math.sin(angle) * 5);
+      lamp.position.y += 2.5;
+      lamp.target.position.copy(center);
+      this.root.add(lamp, lamp.target);
+    }
+    this.root.add(this.ambient);
+    // A subtle procedural shaft makes the incoming studio light visible against dark backgrounds.
+    const shaftTarget = new THREE.Vector3(center.x, this.bounds.min.y, center.z);
+    const shaftVector = this.front.position.clone().sub(shaftTarget);
+    const shaftMaterial = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+      uniforms: { strength: { value: 0.025 }, floorY: { value: this.bounds.min.y } },
+      vertexShader: `varying vec2 vUv; varying float vHeight;
+        void main() {
+          vUv = uv;
+          vHeight = (modelMatrix * vec4(position, 1.0)).y;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `uniform float strength; uniform float floorY;
+        varying vec2 vUv; varying float vHeight;
+        void main() {
+          vec2 p = vUv * 2.0 - 1.0;
+          // A broad Gaussian ray with zero opacity at every boundary: no cone surface or rim.
+          float width = mix(0.42, 0.22, vUv.y);
+          float ray = exp(-pow(p.x / width, 2.0) - pow(p.y / 0.68, 2.0));
+          float edges = (1.0 - smoothstep(0.65, 1.0, abs(p.x))) * (1.0 - smoothstep(0.65, 1.0, abs(p.y)));
+          float groundFade = smoothstep(floorY + 0.1, floorY + 2.0, vHeight);
+          gl_FragColor = vec4(0.88, 0.92, 1.0, strength * ray * edges * groundFade);
+        }`,
+    });
+    this.shaft = new THREE.Mesh(new THREE.PlaneGeometry(14, shaftVector.length() + 6), shaftMaterial);
+    this.shaft.position.copy(shaftTarget).addScaledVector(shaftVector, 0.5);
+    const axis = shaftVector.clone().normalize();
+    const eye = new THREE.Vector3(), across = new THREE.Vector3(), normal = new THREE.Vector3();
+    const basis = new THREE.Matrix4();
+    // Face the viewer around the light axis, including the reflector's virtual camera.
+    // This is an atmospheric accent; the actual vehicle lighting remains world-fixed.
+    this.shaft.onBeforeRender = (_renderer, _scene, camera) => {
+      camera.getWorldPosition(eye).sub(this.shaft.position).normalize();
+      across.crossVectors(axis, eye);
+      if (across.lengthSq() < 0.0001) across.crossVectors(axis, new THREE.Vector3(1, 0, 0));
+      across.normalize(); normal.crossVectors(across, axis).normalize();
+      basis.makeBasis(across, axis, normal);
+      this.shaft.quaternion.setFromRotationMatrix(basis);
+      this.shaft.updateMatrixWorld(true);
+      this.shaft.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse, this.shaft.matrixWorld);
+    };
+    this.root.add(this.shaft, this.front, this.front.target);
+    this.root.add(this.floor, this.key, this.key.target, this.fill, this.fill.target);
+  }
+
+  /** Follow only the main camera, before rendering (never the floor's reflection camera). */
+  followCamera(camera: THREE.Camera) {
+    camera.getWorldPosition(this.cameraDirection).sub(this.vehicleCenter).normalize();
+    this.cameraFill.position.copy(this.vehicleCenter).addScaledVector(this.cameraDirection, 6);
+    this.cameraFill.position.y += 1.5;
+  }
+
+  update(background: THREE.Color, dark: boolean, reflection: number, light: number) {
+    const uniforms = (this.floor.material as THREE.ShaderMaterial).uniforms;
+    uniforms.floorColor.value.copy(background);
+    uniforms.reflection.value = reflection;
+    uniforms.textureStrength.value = dark ? 1 : 0.18;
+    uniforms.pool.value = (dark ? 0.16 : 0.06) * light;
+    this.shaft.material.uniforms.strength.value = (dark ? 0.065 : 0.006) * light;
+    this.front.intensity = 65 * light;
+    this.key.intensity = 2.5 * light;
+    this.fill.intensity = 1.2 * light;
+    this.ambient.intensity = 1.5 * light;
+    this.cameraFill.intensity = 3 * light;
+    for (const lamp of this.surround) lamp.intensity = 3 * light;
+  }
+
+  dispose() {
+    this.root.removeFromParent();
+    this.floor.geometry.dispose(); this.floor.dispose();
+    this.shaft.geometry.dispose(); this.shaft.material.dispose();
+    this.cameraFill.dispose(); this.ambient.dispose(); for (const lamp of this.surround) lamp.dispose();
+    this.front.dispose(); this.key.dispose(); this.fill.dispose();
+  }
+}

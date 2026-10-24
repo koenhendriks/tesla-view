@@ -12,6 +12,7 @@ export interface HomeAssistant {
   themes?: { darkMode?: boolean };
   language?: string;
   callService(domain: string, service: string, data?: Record<string, any>, target?: Record<string, any>): Promise<any>;
+  fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
   callWS<T = any>(msg: Record<string, any>): Promise<T>;
 }
 
@@ -35,16 +36,22 @@ export interface CardConfig {
   model?: string;                 // model id / alias / codename from the asset pack (default: the pack's default model)
   trim?: 'premium' | 'performance';
   paint?: string;                 // paint name from the pack
+  wrap_url?: string;              // model-compatible PNG on the second UV channel
+  wrap_name?: string;             // optional display name from the upload picker
   wheels?: string;                // API wheel name from the pack (e.g. Crossflow19)
   plate?: 'eu' | 'us';
   seats?: 5 | 7;
   cable?: string;                 // auto | CCS | EU | US …
   rhd?: boolean;
   theme?: 'auto' | 'dark' | 'light';
+  scene?: 'classic' | 'studio';
+  studio_reflection?: number;     // 0..1, default 0.25
+  studio_light?: number;          // 0..3, default 1
   camera?: string;                // preset name from the pack (parked, top_down, charging, …) or "free"
   aspect_ratio?: string;          // e.g. "16:9"
   height?: number;                // px, overrides aspect_ratio
   hotspots?: boolean;
+  fold_mirrors_on_lock?: boolean; // visual inference; requires pack mirrors_fold closure
   entities?: Partial<Record<ChannelId, string>>;
   states?: Partial<Record<ChannelId, Record<string, string[]>>>;
   actions?: Record<string, ActionConfig>;
