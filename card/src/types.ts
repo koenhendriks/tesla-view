@@ -51,6 +51,7 @@ export interface CardConfig {
   aspect_ratio?: string;          // e.g. "16:9"
   height?: number;                // px, overrides aspect_ratio
   hotspots?: boolean;
+  fold_mirrors_on_lock?: boolean; // visual inference; requires pack mirrors_fold closure
   entities?: Partial<Record<ChannelId, string>>;
   states?: Partial<Record<ChannelId, Record<string, string[]>>>;
   actions?: Record<string, ActionConfig>;

@@ -31,6 +31,7 @@ const LABELS: Record<string, string> = {
   window_fl: 'Front left window', window_fr: 'Front right window', window_rl: 'Rear left window', window_rr: 'Rear right window',
   charge_cable: 'Charge cable connected', charging: 'Charging state', headlights: 'Headlights', drl: 'Daytime running lights',
   flash_lights: 'Flash lights',
+  fold_mirrors_on_lock: 'Fold 3D mirrors when locked',
 };
 
 const HELPERS: Record<string, string> = {
@@ -45,6 +46,7 @@ const HELPERS: Record<string, string> = {
   flash_lights: 'button/script pressed by the lights hotspot',
   headlights: 'no Tesla Fleet equivalent – e.g. a BLE binary sensor',
   drl: 'no Tesla Fleet equivalent',
+  fold_mirrors_on_lock: 'Visual only: infer mirror position from lock state. Disable if Auto Fold is off in your car.',
 };
 
 /** Visual editor: device + look (from the asset pack) + one entity picker per channel. `states:` / `actions:` stay YAML. */
@@ -217,6 +219,7 @@ export class TeslaViewCardEditor extends LitElement {
       look.push({ name: 'aspect_ratio', selector: { text: {} } });
     }
     const flags: any[] = [{ name: 'hotspots', selector: { boolean: {} } }];
+    if (pick && this.manifest?.models[pick.id]?.closures?.mirrors_fold?.length) flags.push({ name: 'fold_mirrors_on_lock', selector: { boolean: {} } });
     if (pick?.entry.variants.includes('rhd')) flags.unshift({ name: 'rhd', selector: { boolean: {} } });
     return [
       { name: 'device_id', selector: { device: { filter: { integration: 'tesla_fleet' } } } },
@@ -257,7 +260,7 @@ export class TeslaViewCardEditor extends LitElement {
     if (!this.hass) return html``;
     const pick = this.modelPick();
     const noPack = this.index !== undefined && !pick;
-    const defaults: any = { scene: 'classic', studio_reflection: 0.25, studio_light: 1, trim: 'premium', plate: 'eu', seats: '5', cable: 'auto', theme: 'auto', camera: 'parked', aspect_ratio: '16:9', hotspots: true };
+    const defaults: any = { scene: 'classic', studio_reflection: 0.25, studio_light: 1, trim: 'premium', plate: 'eu', seats: '5', cable: 'auto', theme: 'auto', camera: 'parked', aspect_ratio: '16:9', hotspots: true, fold_mirrors_on_lock: true };
     if (pick) { defaults.model = pick.id; defaults.wheels = pick.entry.default_wheel; }
     const data = { ...defaults, ...this.config, studio_enabled: this.config.scene === 'studio', seats: String((this.config as any).seats ?? 5), entities: { ...(this.config.entities || {}) } };
     return html`

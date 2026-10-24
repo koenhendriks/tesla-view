@@ -198,3 +198,9 @@ replacing the vehicle, and when the card disconnects.
 Choose **Camera → Front right (three-quarter)** for an elevated front view. It works with both Classic and Studio scenes and custom wraps. YAML: `camera: front_right`.
 
 The Studio toggle switches back to Classic when disabled, preserving reflection and lighting settings. Studio includes a front spotlight and soft floor light beams; these presentation effects do not send headlight commands to the vehicle.
+
+### Mirror folding
+
+`fold_mirrors_on_lock` (default `true`) folds the 3D mirrors when the lock entity is locked and extends them when unlocked. This is a visual inference, not mirror telemetry or a separate vehicle command. Turn it off in the visual editor or YAML if Auto Fold is disabled in your car. Unknown lock state does not change mirror position.
+
+Supported packs map their mirror animations into the existing `closures.mirrors_fold` channel, with time zero extended and the animation endpoint folded. Packs without this mapping keep their original mirrors; there are no model-specific animation names in the card.

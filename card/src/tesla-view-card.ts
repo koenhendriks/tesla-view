@@ -283,6 +283,8 @@ export class TeslaViewCard extends LitElement {
     const v = this.vehicle; if (!v) return;
     for (const ch of ['frunk', 'trunk', 'charge_port', 'door_fl', 'door_fr', 'door_rl', 'door_rr', 'window_fl', 'window_fr', 'window_rl', 'window_rr'] as const)
       if (s[ch] !== undefined) v.setClosure(ch, !!s[ch], animate);
+    // Pack animation time 0 is extended; the endpoint is folded. Unknown lock state is left alone.
+    if (s.lock !== undefined) v.setClosure('mirrors_fold', this.config.fold_mirrors_on_lock !== false && s.lock, animate);
     v.setLights({ drl: !!s.drl, headlights: !!s.headlights });
     if (s.charge_cable !== undefined) { v.setCable(!!s.charge_cable, s.charging || 'unknown'); if (s.charge_cable) v.setClosure('charge_port', true, animate); }   // a plugged cable implies an open port
     this.wake(1500);
