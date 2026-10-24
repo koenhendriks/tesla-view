@@ -314,6 +314,7 @@ export class TeslaViewCard extends LitElement {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     const busy = this.vehicle?.update(dt) || false;
     this.controls?.update();
+    this.studio?.followCamera(this.camera);
     this.renderer.render(this.scene, this.camera);
     this.hotspots?.update();
     if (busy || this.interacting || this.hotspots?.anyHovered() || performance.now() < this.wakeUntil) requestAnimationFrame(this.frame);

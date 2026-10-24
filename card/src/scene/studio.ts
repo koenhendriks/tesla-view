@@ -11,6 +11,9 @@ export class StudioScene {
   private shaft: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private ambient = new THREE.HemisphereLight(0xffffff, 0x9ca7b5, 0.6);
   private surround = Array.from({ length: 4 }, () => new THREE.DirectionalLight(0xf1f5ff, 1.2));
+  private cameraFill = new THREE.DirectionalLight(0xffffff, 3);
+  private vehicleCenter = new THREE.Vector3();
+  private cameraDirection = new THREE.Vector3();
   private bounds = new THREE.Box3();
 
   constructor(vehicle: THREE.Object3D, frontAnchor?: THREE.Object3D) {
@@ -27,7 +30,9 @@ export class StudioScene {
       this.bounds.union(box.clone().applyMatrix4(mesh.matrixWorld));
     });
     if (this.bounds.isEmpty()) this.bounds.set(new THREE.Vector3(-1, 0, -2), new THREE.Vector3(1, 2, 2));
-    const center = this.bounds.getCenter(new THREE.Vector3());
+    const center = this.bounds.getCenter(this.vehicleCenter);
+    this.cameraFill.target.position.copy(center);
+    this.root.add(this.cameraFill, this.cameraFill.target);
     const size = this.bounds.getSize(new THREE.Vector3());
     const forward = frontAnchor ? frontAnchor.getWorldPosition(new THREE.Vector3()).sub(center) : new THREE.Vector3(0, 0, -1);
     forward.y = 0; forward.normalize();
@@ -152,6 +157,13 @@ export class StudioScene {
     this.root.add(this.floor, this.key, this.key.target, this.fill, this.fill.target);
   }
 
+  /** Follow only the main camera, before rendering (never the floor's reflection camera). */
+  followCamera(camera: THREE.Camera) {
+    camera.getWorldPosition(this.cameraDirection).sub(this.vehicleCenter).normalize();
+    this.cameraFill.position.copy(this.vehicleCenter).addScaledVector(this.cameraDirection, 6);
+    this.cameraFill.position.y += 1.5;
+  }
+
   update(background: THREE.Color, dark: boolean, reflection: number, light: number) {
     const uniforms = (this.floor.material as THREE.ShaderMaterial).uniforms;
     uniforms.floorColor.value.copy(background);
@@ -163,6 +175,7 @@ export class StudioScene {
     this.key.intensity = 2.5 * light;
     this.fill.intensity = 1.2 * light;
     this.ambient.intensity = 1.5 * light;
+    this.cameraFill.intensity = 3 * light;
     for (const lamp of this.surround) lamp.intensity = 3 * light;
   }
 
@@ -170,7 +183,7 @@ export class StudioScene {
     this.root.removeFromParent();
     this.floor.geometry.dispose(); this.floor.dispose();
     this.shaft.geometry.dispose(); this.shaft.material.dispose();
-    this.ambient.dispose(); for (const lamp of this.surround) lamp.dispose();
+    this.cameraFill.dispose(); this.ambient.dispose(); for (const lamp of this.surround) lamp.dispose();
     this.front.dispose(); this.key.dispose(); this.fill.dispose();
   }
 }
