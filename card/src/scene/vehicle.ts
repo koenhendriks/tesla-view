@@ -3,6 +3,7 @@ import { fetchJson, loadGltf, loadObj } from './assets';
 import { MaterialFactory, type MaterialDesc } from './materials';
 import { resolveCable, resolveWheel, type CableDef, type LightGroup, type ModelDef, type PackManifest } from '../pack';
 import type { ChargingState } from '../types';
+import { createFrontAnchor, createRoofAnchor } from './anchors';
 
 /** `*.overrides.json` written by tesla-view-extractor for a Godot scene */
 export interface SceneOverrides {
@@ -173,11 +174,17 @@ export class Vehicle {
       }
       this.markers[m.name] = o;
     }
-    if (!this.markers.lights) {   // front light bar: derived from the body's bounding box (nose = −Z)
-      const box = new THREE.Box3().setFromObject(this.glbRoot);
-      const o = new THREE.Object3D(); o.name = 'LightsAnchor';
-      o.position.set(0, box.min.y + 0.45 * (box.max.y - box.min.y), box.min.z + 0.1);
-      this.glbRoot.add(o); this.nodes.LightsAnchor = o; this.markers.lights = o;
+    const bodyPath = this.def.bindings?.body_path;
+    const body = bodyPath && this.nodes[bodyPath.split('/').pop()!];
+    if (!this.markers.lock) {
+      const anchor = createRoofAnchor(this.glbRoot, body || this.glbRoot);
+      if (anchor) this.markers.lock = anchor;
+    }
+    if (!this.markers.lights) {
+      const frontPath = this.def.pivots?.front;
+      const front = frontPath && this.nodes[frontPath.split('/').pop()!];
+      const anchor = createFrontAnchor(this.glbRoot, body || this.glbRoot, front || this.markers.frunk);
+      if (anchor) this.markers.lights = anchor;
     }
   }
 
