@@ -174,3 +174,23 @@ wrap_name: My custom wrap   # optional display name
 ```
 
 External URLs require CORS support. Remove `wrap_url` and `wrap_name` to return to standard paint.
+
+### Optional Studio scene
+
+Choose **Scene → Studio** in the visual editor for a procedural floor, a live vehicle reflection,
+a soft grounding shadow and directional studio lighting. **Classic** remains the default and uses
+the original pack presentation. This is an optional interpretation of a studio environment, not an
+import of Tesla's in-car renderer. It works with preset paint and custom PNG wraps.
+
+```yaml
+scene: studio
+studio_reflection: 0.25  # 0–1; 0 hides the reflection
+studio_light: 1          # 0–3; strength of added lights and the floor light pool
+```
+
+Both settings are sliders in the visual editor. The floor follows the card's light/dark theme,
+and orbit controls prevent viewing below it. Its soft shadow is an approximate static footprint;
+the reflected car follows doors and other animations. The 768-pixel reflection adds one scene render
+per active frame; rendering still pauses when the card is idle or offscreen. Use Classic on devices
+where the reflection costs too much performance. Studio resources are disposed when disabled, when
+replacing the vehicle, and when the card disconnects.

@@ -44,6 +44,9 @@ export interface CardConfig {
   cable?: string;                 // auto | CCS | EU | US …
   rhd?: boolean;
   theme?: 'auto' | 'dark' | 'light';
+  scene?: 'classic' | 'studio';
+  studio_reflection?: number;     // 0..1, default 0.25
+  studio_light?: number;          // 0..3, default 1
   camera?: string;                // preset name from the pack (parked, top_down, charging, …) or "free"
   aspect_ratio?: string;          // e.g. "16:9"
   height?: number;                // px, overrides aspect_ratio

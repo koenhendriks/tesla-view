@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { ASSETS_ROOT, INDEX_REV, assetUrl, TextureCache } from './scene/assets';
 import { MaterialFactory } from './scene/materials';
+import { StudioScene } from './scene/studio';
 import { Vehicle } from './scene/vehicle';
 import { PackLoader, resolvePaint, type EnvPreset, type PackEnvironment, type PackIndex, type PackManifest } from './pack';
 import { createHotspots } from './hotspots';
@@ -68,6 +69,7 @@ export class TeslaViewCard extends LitElement {
   private probe?: THREE.LightProbe;
   private vehicle?: Vehicle;
   private factory?: MaterialFactory;
+  private studio?: StudioScene;
   private hotspots?: ReturnType<typeof createHotspots>;
   private clock = new THREE.Clock();
   private wakeUntil = 0; private looping = false; private visible = true; private interacting = false;
@@ -81,6 +83,8 @@ export class TeslaViewCard extends LitElement {
     this.config = { ...DEFAULTS, ...config } as CardConfig;
     if (!prev || LOAD_KEYS.some(k => (prev as any)[k] !== (this.config as any)[k])) this.loadVehicle();
     else if (prev.camera !== this.config.camera) { this.firstSync = true; this.applyPreset(); }
+    this.updateStudio();
+    this.applyTheme();
     if (this._hass) this.resolve();
     this.requestUpdate();
   }
@@ -122,8 +126,8 @@ export class TeslaViewCard extends LitElement {
     this.applyTheme(); this.resize();
     if (this.config && !this.vehicle) this.loadVehicle();
   }
-  disconnectedCallback() { super.disconnectedCallback(); this.ro?.disconnect(); this.io?.disconnect(); }
-  connectedCallback() { super.connectedCallback(); if (this.renderer) { this.ro?.observe(this.renderRoot.querySelector('.wrap')!); this.io?.observe(this); this.wake(200); } }
+  disconnectedCallback() { super.disconnectedCallback(); this.ro?.disconnect(); this.io?.disconnect(); this.studio?.dispose(); this.studio = undefined; }
+  connectedCallback() { super.connectedCallback(); this.updateStudio(); if (this.renderer) { this.ro?.observe(this.renderRoot.querySelector('.wrap')!); this.io?.observe(this); this.wake(200); } }
   protected updated(_: PropertyValues) { this.resize(); }
 
   private resize() {
@@ -160,7 +164,17 @@ export class TeslaViewCard extends LitElement {
     const t = this.config?.theme || 'auto';
     const dark = t === 'dark' ? true : t === 'light' ? false : (this._hass?.themes?.darkMode ?? true);
     const bg = this.manifest?.environment?.bg || { dark: '#161718', light: '#F7F7F7' };
-    this.scene.background = new THREE.Color(dark ? bg.dark : bg.light); this.wake(50);
+    this.scene.background = new THREE.Color(dark ? bg.dark : bg.light);
+    const clamp = (value: number | undefined, fallback: number, max: number) => Number.isFinite(value) ? THREE.MathUtils.clamp(value!, 0, max) : fallback;
+    this.studio?.update(this.scene.background, dark, clamp(this.config?.studio_reflection, 0.25, 1), clamp(this.config?.studio_light, 1, 3));
+    this.wake(50);
+  }
+  private updateStudio() {
+    if (this.config?.scene === 'studio' && this.vehicle && this.isConnected) {
+      if (!this.studio) { this.studio = new StudioScene(this.vehicle.root); this.scene.add(this.studio.root); }
+    } else { this.studio?.dispose(); this.studio = undefined; }
+    if (this.controls) this.controls.maxPolarAngle = this.studio ? Math.PI / 2 - 0.02 : Math.PI / 2 + 0.05;
+    this.applyTheme();
   }
   private async setupEnvironment(env: PackEnvironment, base: string) {
     if (!this.renderer || !env.panorama || this.envBase === base) return;
@@ -198,10 +212,12 @@ export class TeslaViewCard extends LitElement {
         plate: this.config.plate, seats7: this.config.seats === 7, wheels: this.config.wheels, cable: this.config.cable,
       });
       if (token !== this.loadToken) return;                        // superseded by a newer config
+      this.studio?.dispose(); this.studio = undefined;
       if (this.vehicle) { this.scene.remove(this.vehicle.root); this.vehicle.dispose(); this.factory?.dispose(); }
       this.hotspots?.dispose();
       this.manifest = manifest; this.base = base;
       this.vehicle = v; this.factory = factory; this.scene.add(v.root);
+      this.updateStudio();
       this.firstSync = true; this.applyTheme(); this.applyPreset();
       if (this.config.hotspots !== false) this.buildHotspots();
       this.message = '';

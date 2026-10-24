@@ -23,6 +23,7 @@ const CHANNEL_DOMAINS: Record<ChannelId, string[]> = {
 
 const LABELS: Record<string, string> = {
   device_id: 'Tesla Fleet device', model: 'Model', trim: 'Trim', paint: 'Paint', wheels: 'Wheels', plate: 'Plate', seats: 'Seats', cable: 'Charge cable',
+  scene: 'Scene', studio_reflection: 'Floor reflection', studio_light: 'Studio lighting',
   theme: 'Theme', camera: 'Camera', aspect_ratio: 'Aspect ratio', rhd: 'Right-hand drive', hotspots: 'Show hotspots',
   frunk: 'Frunk', trunk: 'Trunk', charge_port: 'Charge port door', lock: 'Lock',
   door_fl: 'Front left door', door_fr: 'Front right door', door_rl: 'Rear left door', door_rr: 'Rear right door',
@@ -144,6 +145,11 @@ export class TeslaViewCardEditor extends LitElement {
       if (entry.variants.includes('plate_eu') && entry.variants.includes('plate_us')) look.push({ name: 'plate', selector: plain(['eu', 'us']) });
       if (entry.variants.includes('seats_7')) look.push({ name: 'seats', selector: sel([{ value: '5', label: '5' }, { value: '7', label: '7' }]) });
       if (m && Object.keys(m.cables || {}).length > 1) look.push({ name: 'cable', selector: plain(['auto', ...Object.keys(m.cables)]) });
+      look.push({ name: 'scene', selector: sel([{value: 'classic', label: 'Classic'}, {value: 'studio', label: 'Studio'}]) });
+      if (this.config.scene === 'studio') {
+        look.push({ name: 'studio_reflection', selector: { number: { min: 0, max: 1, step: 0.05, mode: 'slider' } } });
+        look.push({ name: 'studio_light', selector: { number: { min: 0, max: 3, step: 0.1, mode: 'slider' } } });
+      }
       look.push({ name: 'theme', selector: plain(['auto', 'dark', 'light']) });
       look.push({ name: 'camera', selector: plain([...Object.keys(m?.environment?.presets || { parked: 1, top_down: 1 }), 'free']) });
       look.push({ name: 'aspect_ratio', selector: { text: {} } });
@@ -187,7 +193,7 @@ export class TeslaViewCardEditor extends LitElement {
     if (!this.hass) return html``;
     const pick = this.modelPick();
     const noPack = this.index !== undefined && !pick;
-    const defaults: any = { trim: 'premium', plate: 'eu', seats: '5', cable: 'auto', theme: 'auto', camera: 'parked', aspect_ratio: '16:9', hotspots: true };
+    const defaults: any = { scene: 'classic', studio_reflection: 0.25, studio_light: 1, trim: 'premium', plate: 'eu', seats: '5', cable: 'auto', theme: 'auto', camera: 'parked', aspect_ratio: '16:9', hotspots: true };
     if (pick) { defaults.model = pick.id; defaults.wheels = pick.entry.default_wheel; }
     const data = { ...defaults, ...this.config, seats: String((this.config as any).seats ?? 5), entities: { ...(this.config.entities || {}) } };
     return html`
