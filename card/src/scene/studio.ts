@@ -9,6 +9,8 @@ export class StudioScene {
   private fill = new THREE.DirectionalLight(0xdceaff, 0.8);
   private front = new THREE.SpotLight(0xfff3e1, 30, 30, Math.PI / 5, 0.8, 2);
   private shaft: THREE.Mesh<THREE.ConeGeometry, THREE.ShaderMaterial>;
+  private ambient = new THREE.HemisphereLight(0xffffff, 0x9ca7b5, 0.6);
+  private surround = Array.from({ length: 4 }, () => new THREE.DirectionalLight(0xf1f5ff, 1.2));
   private bounds = new THREE.Box3();
 
   constructor(vehicle: THREE.Object3D, frontAnchor?: THREE.Object3D) {
@@ -96,15 +98,37 @@ export class StudioScene {
     this.key.target.position.copy(center); this.fill.target.position.copy(center);
     this.front.position.copy(this.key.position);
     this.front.target.position.copy(center);
+    // Four broad fills keep every side readable while the key retains directional contrast.
+    for (const [i, lamp] of this.surround.entries()) {
+      const angle = i * Math.PI / 2;
+      lamp.position.copy(center).addScaledVector(forward, Math.cos(angle) * 5).addScaledVector(left, Math.sin(angle) * 5);
+      lamp.position.y += 2.5;
+      lamp.target.position.copy(center);
+      this.root.add(lamp, lamp.target);
+    }
+    this.root.add(this.ambient);
     // A subtle procedural shaft makes the incoming studio light visible against dark backgrounds.
     const shaftTarget = new THREE.Vector3(center.x, this.bounds.min.y, center.z);
     const shaftVector = this.front.position.clone().sub(shaftTarget);
     const shaftMaterial = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-      uniforms: { strength: { value: 0.025 } },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform float strength; varying vec2 vUv;
-        void main() { float fade = sin(vUv.y * 3.14159265); gl_FragColor = vec4(0.82, 0.88, 1.0, strength * fade * fade); }`,
+      uniforms: { strength: { value: 0.025 }, floorY: { value: this.bounds.min.y } },
+      vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vView; varying float vHeight;
+        void main() {
+          vUv = uv; vNormal = normalize(normalMatrix * normal);
+          vec4 view = modelViewMatrix * vec4(position, 1.0); vView = -view.xyz;
+          vHeight = (modelMatrix * vec4(position, 1.0)).y;
+          gl_Position = projectionMatrix * view;
+        }`,
+      fragmentShader: `uniform float strength; uniform float floorY;
+        varying vec2 vUv; varying vec3 vNormal; varying vec3 vView; varying float vHeight;
+        void main() {
+          float lengthFade = sin(vUv.y * 3.14159265);
+          // Fade the cone silhouette and its floor intersection, rather than exposing a mesh edge.
+          float edgeFade = pow(abs(dot(normalize(vNormal), normalize(vView))), 2.0);
+          float groundFade = smoothstep(floorY + 0.05, floorY + 1.4, vHeight);
+          gl_FragColor = vec4(0.82, 0.88, 1.0, strength * lengthFade * lengthFade * edgeFade * groundFade);
+        }`,
     });
     this.shaft = new THREE.Mesh(new THREE.ConeGeometry(4.5, shaftVector.length(), 64, 1, true), shaftMaterial);
     this.shaft.position.copy(shaftTarget).addScaledVector(shaftVector, 0.5);
@@ -122,13 +146,16 @@ export class StudioScene {
     this.shaft.material.uniforms.strength.value = (dark ? 0.045 : 0.006) * light;
     this.front.intensity = 65 * light;
     this.key.intensity = 2.5 * light;
-    this.fill.intensity = 0.65 * light;
+    this.fill.intensity = 1.2 * light;
+    this.ambient.intensity = 1.5 * light;
+    for (const lamp of this.surround) lamp.intensity = 3 * light;
   }
 
   dispose() {
     this.root.removeFromParent();
     this.floor.geometry.dispose(); this.floor.dispose();
     this.shaft.geometry.dispose(); this.shaft.material.dispose();
+    this.ambient.dispose(); for (const lamp of this.surround) lamp.dispose();
     this.front.dispose(); this.key.dispose(); this.fill.dispose();
   }
 }
