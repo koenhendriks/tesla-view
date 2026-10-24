@@ -84,7 +84,7 @@ seats: 5               # 5 | 7 (when the model has a 7-seat variant)
 cable: auto            # auto | CCS | EU | US … (charge cable model)
 rhd: false             # right-hand drive interior
 theme: auto            # auto (follows HA dark mode) | dark | light
-camera: parked         # parked | top_down | charging | drive | climate (presets from the pack) | free
+camera: parked         # parked | top_down | charging | drive | climate (presets from the pack) | front_right | free
 aspect_ratio: "16:9"   # or height: 360
 hotspots: true
 ```
@@ -194,3 +194,5 @@ the reflected car follows doors and other animations. The 768-pixel reflection a
 per active frame; rendering still pauses when the card is idle or offscreen. Use Classic on devices
 where the reflection costs too much performance. Studio resources are disposed when disabled, when
 replacing the vehicle, and when the card disconnects.
+
+Choose **Camera → Front right (three-quarter)** for an elevated front view. It works with both Classic and Studio scenes and custom wraps. YAML: `camera: front_right`.

@@ -146,7 +146,9 @@ export class TeslaViewCard extends LitElement {
   private placeCamera() {
     if (this.config?.camera === 'free' && this.controls && this.camera.position.lengthSq() > 0.01 && !this.firstSync) return;
     const p = this.preset(); if (!p) return;
-    const e = new THREE.Euler(...(p.camera.pivot_deg.map(THREE.MathUtils.degToRad) as [number, number, number]), 'YXZ');
+    // User-facing three-quarter view; retain the pack's framing and lighting.
+    const pivot = this.config?.camera === 'front_right' ? [70, 142, 0] : p.camera.pivot_deg;
+    const e = new THREE.Euler(...(pivot.map(THREE.MathUtils.degToRad) as [number, number, number]), 'YXZ');
     const target = new THREE.Vector3().fromArray(p.camera.target || [0, 0.6, 0]);
     const offset = new THREE.Vector3().fromArray(p.camera.offset).multiplyScalar(CAMERA_FIT * Math.max(1, 1.5 / this.camera.aspect));   // narrow cards: back off so the car fits
     this.camera.position.copy(offset).applyEuler(e).add(target);

@@ -151,7 +151,7 @@ export class TeslaViewCardEditor extends LitElement {
         look.push({ name: 'studio_light', selector: { number: { min: 0, max: 3, step: 0.1, mode: 'slider' } } });
       }
       look.push({ name: 'theme', selector: plain(['auto', 'dark', 'light']) });
-      look.push({ name: 'camera', selector: plain([...Object.keys(m?.environment?.presets || { parked: 1, top_down: 1 }), 'free']) });
+      look.push({ name: 'camera', selector: sel([...Object.keys(m?.environment?.presets || { parked: 1, top_down: 1 }).filter(name => name !== 'front_right').map(value => ({ value, label: value })), { value: 'front_right', label: 'Front right (three-quarter)' }, { value: 'free', label: 'free' }]) });
       look.push({ name: 'aspect_ratio', selector: { text: {} } });
     }
     const flags: any[] = [{ name: 'hotspots', selector: { boolean: {} } }];
