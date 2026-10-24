@@ -12,6 +12,7 @@ export interface HomeAssistant {
   themes?: { darkMode?: boolean };
   language?: string;
   callService(domain: string, service: string, data?: Record<string, any>, target?: Record<string, any>): Promise<any>;
+  fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
   callWS<T = any>(msg: Record<string, any>): Promise<T>;
 }
 
@@ -35,6 +36,8 @@ export interface CardConfig {
   model?: string;                 // model id / alias / codename from the asset pack (default: the pack's default model)
   trim?: 'premium' | 'performance';
   paint?: string;                 // paint name from the pack
+  wrap_url?: string;              // model-compatible PNG on the second UV channel
+  wrap_name?: string;             // optional display name from the upload picker
   wheels?: string;                // API wheel name from the pack (e.g. Crossflow19)
   plate?: 'eu' | 'us';
   seats?: 5 | 7;

@@ -23,7 +23,7 @@ export interface MaterialDesc {
  */
 export class MaterialFactory {
   private cache = new Map<string, THREE.Material>();
-  constructor(public readonly textures: TextureCache, public paint: Paint, private gamma = true, private roughRoughness = 1.0) {}
+  constructor(public readonly textures: TextureCache, public paint: Paint, private gamma = true, private roughRoughness = 1.0, private wrapUrl = '') {}
 
   /** Godot colours are sRGB values; GLES2 uses them untransformed. */
   color(rgb: number[]) {
@@ -53,6 +53,27 @@ export class MaterialFactory {
       });
       const ao = desc.params?.ao || desc.ao_texture;
       if (ao) { pm.aoMap = T.packed(ao, 2, 0, 0); pm.aoMapIntensity = 1.0; }
+      if (isPaint && this.wrapUrl) {
+        pm.map = T.texture(this.wrapUrl, { color: true, channel: 1 });
+        // Blend the wrap into paint rather than making the vehicle transparent.
+        // Keep the underlying paint's material properties in transparent pixels.
+        pm.onBeforeCompile = shader => {
+          shader.fragmentShader = shader.fragmentShader
+            .replace('#include <map_fragment>', `
+              vec4 wrapColor = texture2D(map, vMapUv);
+              diffuseColor.rgb = mix(diffuseColor.rgb, wrapColor.rgb / 10.0, wrapColor.a);
+            `)
+            .replace('#include <roughnessmap_fragment>', `
+              #include <roughnessmap_fragment>
+              roughnessFactor = mix(roughnessFactor, 0.9, wrapColor.a);
+            `)
+            .replace('#include <metalnessmap_fragment>', `
+              #include <metalnessmap_fragment>
+              metalnessFactor = mix(metalnessFactor, 0.0, wrapColor.a);
+            `);
+        };
+        pm.customProgramCacheKey = () => 'tesla-view-png-wrap-v1';
+      }
       m = pm;
     } else if (desc.kind === 'tinted_glass') {
       // glass_skybox.shader: ALBEDO=color.rgb, ALPHA=color.a, METALLIC, ROUGHNESS, SPECULAR

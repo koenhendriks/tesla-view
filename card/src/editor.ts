@@ -52,6 +52,10 @@ export class TeslaViewCardEditor extends LitElement {
   private index: PackIndex | null | undefined = undefined;   // undefined = loading
   private manifest?: PackManifest;
   private manifestFor = '';
+  private wrapBusy = false;
+  private wrapError = '';
+  private wrapMessage = '';
+  private uploadGeneration = 0;
   private packs = new PackLoader(ASSETS_ROOT);
 
   static properties = { hass: {}, config: { state: true }, index: { state: true }, manifest: { state: true } } as any;
@@ -61,6 +65,60 @@ export class TeslaViewCardEditor extends LitElement {
     super.connectedCallback();
     this.packs.index(INDEX_REV).then(idx => { this.index = idx; this.loadManifest(); }).catch(() => { this.index = null; });
   }
+  private updateWrap(url: string, name: string) {
+    const config = { ...this.config };
+    if (url) { config.wrap_url = url; config.wrap_name = name || ''; }
+    else { delete config.wrap_url; delete config.wrap_name; }
+    this.config = config;
+    this.wrapMessage = url ? 'Wrap selected. Click Save to keep it.' : 'Standard paint selected. Click Save to keep it.';
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config }, bubbles: true, composed: true }));
+    this.requestUpdate();
+  }
+  private async uploadWrap(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file || this.wrapBusy) return;
+    const generation = ++this.uploadGeneration;
+    this.wrapBusy = true; this.wrapError = ''; this.wrapMessage = 'Uploading PNG…'; this.requestUpdate();
+    try {
+      if (file.size > 9 * 1024 * 1024) throw new Error('Choose a PNG smaller than 9 MB.');
+      const signature = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+      if (![137,80,78,71,13,10,26,10].every((v,i) => signature[i] === v)) throw new Error('Choose a valid PNG image.');
+      const bitmap = await createImageBitmap(file);
+      const valid = bitmap.width === bitmap.height && bitmap.width <= 4096;
+      bitmap.close();
+      if (!valid) throw new Error('Use a square Tesla wrap PNG, up to 4096 × 4096 pixels.');
+      const data = new FormData();
+      data.append('file', new File([file], file.name, {type:'image/png'}));
+      if (!this.hass?.fetchWithAuth) throw new Error('Image upload is unavailable. Configure wrap_url in YAML instead.');
+      const response = await this.hass.fetchWithAuth('/api/image/upload', { method:'POST', body:data });
+      if (!response.ok) throw new Error('Upload failed (' + response.status + '). Your current wrap is unchanged.');
+      const uploaded = await response.json();
+      if (!uploaded.id) throw new Error('Home Assistant did not return an image ID.');
+      if (generation !== this.uploadGeneration || !this.isConnected) return;
+      this.updateWrap('/api/image/serve/' + uploaded.id + '/original', file.name);
+    } catch (error) { this.wrapError = error instanceof Error ? error.message : 'Could not upload the PNG.'; this.wrapMessage = ''; }
+    finally { this.wrapBusy = false; input.value = ''; this.requestUpdate(); }
+  }
+  private renderWrap() {
+    return html`<section style="padding:16px;border:1px solid var(--divider-color);border-radius:12px;margin-bottom:20px">
+      <h3 style="margin:0 0 8px">Custom PNG wrap</h3>
+      <p style="margin:0 0 12px">Choose a square PNG made for your Tesla model’s wrap template.</p>
+      ${this.config.wrap_url ? html`<img src=${this.config.wrap_url} alt="Current wrap texture" style="width:120px;height:120px;object-fit:contain;background:#222;border-radius:8px"><p>${this.config.wrap_name || 'Custom wrap active'}</p>` : html`<p>Using standard paint</p>`}
+      <label style="display:block;margin:12px 0">Upload PNG
+        <input aria-label="Upload PNG wrap" type="file" accept="image/png,.png" ?disabled=${this.wrapBusy} @change=${(e: Event)=>this.uploadWrap(e)} style="display:block;margin-top:8px;max-width:100%">
+      </label>
+      <ha-button ?disabled=${this.wrapBusy || !this.config.wrap_url} @click=${()=>this.updateWrap('', '')}>Use standard paint</ha-button>
+      ${this.wrapMessage ? html`<p role="status">${this.wrapMessage}</p>` : ''}
+      ${this.wrapError ? html`<p role="alert" style="color:var(--error-color)">${this.wrapError}</p>` : ''}
+    </section>`;
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    ++this.uploadGeneration;
+  }
+
   private modelPick() { return PackLoader.resolveModel(this.index || null, this.config.model); }
   private async loadManifest() {
     const pick = this.modelPick(); if (!pick || !this.index) return;
@@ -112,7 +170,7 @@ export class TeslaViewCardEditor extends LitElement {
 
   private onChange(ev: CustomEvent) {
     ev.stopPropagation();
-    const value = { ...ev.detail.value } as CardConfig;
+    const value = { ...this.config, ...ev.detail.value } as CardConfig;
     // drop cleared pickers so the YAML stays tidy and the card falls back to the device mapping
     const entities: Partial<Record<ChannelId, string>> = {};
     for (const ch of CHANNELS) { const id = (value.entities as any)?.[ch]; if (id) entities[ch] = id; }
@@ -137,6 +195,7 @@ export class TeslaViewCardEditor extends LitElement {
         Build one from your copy of the Tesla app with
         <a href="https://github.com/koenhendriks/tesla-view-extractor" target="_blank" rel="noopener">tesla-view-extractor</a> and upload it under
         <a href="/config/integrations/integration/tesla_view">Settings → Devices &amp; services → Tesla View → Configure</a>.</ha-alert>` : ''}
+      ${this.renderWrap()}
       <ha-form .hass=${this.hass} .data=${data} .schema=${this.schema()} .computeLabel=${this.label} .computeHelper=${this.helper}
         @value-changed=${(ev: CustomEvent) => this.onChange(ev)}></ha-form>`;
   }

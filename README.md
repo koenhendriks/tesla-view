@@ -152,3 +152,25 @@ Releases are tag-driven: bump the version in `custom_components/tesla_view/const
 
 Code: [MIT](LICENSE). This repository contains no Tesla material; see [NOTICE](NOTICE). Tesla, Model 3, Model S,
 Model X, Model Y and Cybertruck are trademarks of Tesla, Inc. This project is not affiliated with or endorsed by Tesla.
+
+### Custom PNG wraps
+
+In the card's visual editor, **Custom PNG wrap → Upload PNG** selects an image from your computer.
+The editor shows a texture preview and filename; click **Save** to apply it. **Use standard paint** removes
+the wrap from the card. Uploaded images remain in Home Assistant's image storage when a wrap is removed or
+the editor is cancelled. Upload requires Home Assistant's image upload integration.
+
+Use a square PNG matching your vehicle's wrap template (up to 4096 × 4096 and 9 MB). The asset pack must
+include matching second-channel UV coordinates (TEXCOORD_1). Only car-paint materials receive the wrap;
+glass, lights, wheels and trim retain their materials. Transparent pixels reveal the selected paint.
+No wrap images or vehicle assets are bundled with the card.
+
+For an existing image, configure a same-origin image URL directly:
+
+```yaml
+type: custom:tesla-view-card
+wrap_url: /local/my-wrap.png
+wrap_name: My custom wrap   # optional display name
+```
+
+External URLs require CORS support. Remove `wrap_url` and `wrap_name` to return to standard paint.

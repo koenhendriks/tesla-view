@@ -22,7 +22,7 @@ const DOCS_PACK_URL = DOCS_URL + '#asset-pack';
 const CAMERA_FIT = 0.84;
 
 const DEFAULTS: Partial<CardConfig> = { trim: 'premium', plate: 'eu', seats: 5, cable: 'auto', theme: 'auto', camera: 'parked', aspect_ratio: '16:9', hotspots: true };
-const LOAD_KEYS: (keyof CardConfig)[] = ['model', 'trim', 'paint', 'wheels', 'plate', 'seats', 'cable', 'rhd', 'hotspots'];
+const LOAD_KEYS: (keyof CardConfig)[] = ['wrap_url', 'model', 'trim', 'paint', 'wheels', 'plate', 'seats', 'cable', 'rhd', 'hotspots'];
 
 interface Pending { value: any; since: string | undefined; until: number }
 
@@ -192,7 +192,7 @@ export class TeslaViewCard extends LitElement {
       const gamma = (manifest.environment?.renderer || 'gles2_gamma') === 'gles2_gamma';
       const { paint } = resolvePaint(manifest, this.config.paint);
       const textures = new TextureCache(gamma, base);
-      const factory = new MaterialFactory(textures, paint, gamma, 1.0);
+      const factory = new MaterialFactory(textures, paint, gamma, 1.0, this.config.wrap_url);
       const v = await Vehicle.load({
         manifest, modelId: pick.id, base, factory, performance: this.config.trim === 'performance', rhd: !!this.config.rhd,
         plate: this.config.plate, seats7: this.config.seats === 7, wheels: this.config.wheels, cable: this.config.cable,
