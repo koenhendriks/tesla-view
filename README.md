@@ -177,7 +177,7 @@ External URLs require CORS support. Remove `wrap_url` and `wrap_name` to return 
 
 ### Optional Studio scene
 
-Choose **Scene → Studio** in the visual editor for a procedural floor, a live vehicle reflection,
+Turn on **Enable Studio light environment** in the visual editor for a procedural floor, a live vehicle reflection,
 a soft grounding shadow and directional studio lighting. **Classic** remains the default and uses
 the original pack presentation. This is an optional interpretation of a studio environment, not an
 import of Tesla's in-car renderer. It works with preset paint and custom PNG wraps.
@@ -196,3 +196,5 @@ where the reflection costs too much performance. Studio resources are disposed w
 replacing the vehicle, and when the card disconnects.
 
 Choose **Camera → Front right (three-quarter)** for an elevated front view. It works with both Classic and Studio scenes and custom wraps. YAML: `camera: front_right`.
+
+The Studio toggle switches back to Classic when disabled, preserving reflection and lighting settings. Studio includes a front spotlight and soft floor light beams; these presentation effects do not send headlight commands to the vehicle.

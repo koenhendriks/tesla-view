@@ -173,7 +173,7 @@ export class TeslaViewCard extends LitElement {
   }
   private updateStudio() {
     if (this.config?.scene === 'studio' && this.vehicle && this.isConnected) {
-      if (!this.studio) { this.studio = new StudioScene(this.vehicle.root); this.scene.add(this.studio.root); }
+      if (!this.studio) { this.studio = new StudioScene(this.vehicle.root, this.vehicle.markers.frunk || this.vehicle.markers.lights); this.scene.add(this.studio.root); }
     } else { this.studio?.dispose(); this.studio = undefined; }
     if (this.controls) this.controls.maxPolarAngle = this.studio ? Math.PI / 2 - 0.02 : Math.PI / 2 + 0.05;
     this.applyTheme();
