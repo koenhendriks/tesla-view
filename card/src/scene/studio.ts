@@ -8,7 +8,7 @@ export class StudioScene {
   private key = new THREE.DirectionalLight(0xffeedb, 2);
   private fill = new THREE.DirectionalLight(0xdceaff, 0.8);
   private front = new THREE.SpotLight(0xfff3e1, 30, 30, Math.PI / 5, 0.8, 2);
-  private shaft: THREE.Mesh<THREE.ConeGeometry, THREE.ShaderMaterial>;
+  private shaft: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private ambient = new THREE.HemisphereLight(0xffffff, 0x9ca7b5, 0.6);
   private surround = Array.from({ length: 4 }, () => new THREE.DirectionalLight(0xf1f5ff, 1.2));
   private bounds = new THREE.Box3();
@@ -113,26 +113,41 @@ export class StudioScene {
     const shaftMaterial = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
       uniforms: { strength: { value: 0.025 }, floorY: { value: this.bounds.min.y } },
-      vertexShader: `varying vec2 vUv; varying vec3 vNormal; varying vec3 vView; varying float vHeight;
+      vertexShader: `varying vec2 vUv; varying float vHeight;
         void main() {
-          vUv = uv; vNormal = normalize(normalMatrix * normal);
-          vec4 view = modelViewMatrix * vec4(position, 1.0); vView = -view.xyz;
+          vUv = uv;
           vHeight = (modelMatrix * vec4(position, 1.0)).y;
-          gl_Position = projectionMatrix * view;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: `uniform float strength; uniform float floorY;
-        varying vec2 vUv; varying vec3 vNormal; varying vec3 vView; varying float vHeight;
+        varying vec2 vUv; varying float vHeight;
         void main() {
-          float lengthFade = sin(vUv.y * 3.14159265);
-          // Fade the cone silhouette and its floor intersection, rather than exposing a mesh edge.
-          float edgeFade = pow(abs(dot(normalize(vNormal), normalize(vView))), 2.0);
-          float groundFade = smoothstep(floorY + 0.05, floorY + 1.4, vHeight);
-          gl_FragColor = vec4(0.82, 0.88, 1.0, strength * lengthFade * lengthFade * edgeFade * groundFade);
+          vec2 p = vUv * 2.0 - 1.0;
+          // A broad Gaussian ray with zero opacity at every boundary: no cone surface or rim.
+          float width = mix(0.42, 0.22, vUv.y);
+          float ray = exp(-pow(p.x / width, 2.0) - pow(p.y / 0.68, 2.0));
+          float edges = (1.0 - smoothstep(0.65, 1.0, abs(p.x))) * (1.0 - smoothstep(0.65, 1.0, abs(p.y)));
+          float groundFade = smoothstep(floorY + 0.1, floorY + 2.0, vHeight);
+          gl_FragColor = vec4(0.88, 0.92, 1.0, strength * ray * edges * groundFade);
         }`,
     });
-    this.shaft = new THREE.Mesh(new THREE.ConeGeometry(4.5, shaftVector.length(), 64, 1, true), shaftMaterial);
+    this.shaft = new THREE.Mesh(new THREE.PlaneGeometry(14, shaftVector.length() + 6), shaftMaterial);
     this.shaft.position.copy(shaftTarget).addScaledVector(shaftVector, 0.5);
-    this.shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), shaftVector.normalize());
+    const axis = shaftVector.clone().normalize();
+    const eye = new THREE.Vector3(), across = new THREE.Vector3(), normal = new THREE.Vector3();
+    const basis = new THREE.Matrix4();
+    // Face the viewer around the light axis, including the reflector's virtual camera.
+    // This is an atmospheric accent; the actual vehicle lighting remains world-fixed.
+    this.shaft.onBeforeRender = (_renderer, _scene, camera) => {
+      camera.getWorldPosition(eye).sub(this.shaft.position).normalize();
+      across.crossVectors(axis, eye);
+      if (across.lengthSq() < 0.0001) across.crossVectors(axis, new THREE.Vector3(1, 0, 0));
+      across.normalize(); normal.crossVectors(across, axis).normalize();
+      basis.makeBasis(across, axis, normal);
+      this.shaft.quaternion.setFromRotationMatrix(basis);
+      this.shaft.updateMatrixWorld(true);
+      this.shaft.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse, this.shaft.matrixWorld);
+    };
     this.root.add(this.shaft, this.front, this.front.target);
     this.root.add(this.floor, this.key, this.key.target, this.fill, this.fill.target);
   }
@@ -143,7 +158,7 @@ export class StudioScene {
     uniforms.reflection.value = reflection;
     uniforms.textureStrength.value = dark ? 1 : 0.18;
     uniforms.pool.value = (dark ? 0.16 : 0.06) * light;
-    this.shaft.material.uniforms.strength.value = (dark ? 0.045 : 0.006) * light;
+    this.shaft.material.uniforms.strength.value = (dark ? 0.065 : 0.006) * light;
     this.front.intensity = 65 * light;
     this.key.intensity = 2.5 * light;
     this.fill.intensity = 1.2 * light;
